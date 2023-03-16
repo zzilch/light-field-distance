@@ -187,6 +187,131 @@ class LightFieldDistance:
         return lfd
 
 
+class MeshEncoder2:
+    """Class holding an object and preprocessing it using an external cmd."""
+
+    def __init__(self, obj_dir, file_name, lfd_dir):
+        """Instantiate the class.
+
+        It instantiates an empty, temporary folder that will hold any
+        intermediate data necessary to calculate Light Field Distance.
+
+        Args:
+            vertices: np.ndarray of vertices consisting of 3 coordinates each.
+            triangles: np.ndarray where each entry is a vector with 3 elements.
+                Each element correspond to vertices that create a triangle.
+        """
+        self.file_name = file_name
+        self.temp_dir_path = Path(obj_dir)
+        self.lfd_dir_path = Path(lfd_dir)
+        self.temp_path = self.temp_dir_path / "{}.obj".format(self.file_name)
+
+    def get_path(self) -> str:
+        """Get path of the object.
+
+        Commands require that an object is represented without any extension.
+
+        Returns:
+            Path to the temporary object created in the file system that
+            holds the Wavefront OBJ data of the object.
+        """
+        return self.temp_path.with_suffix("").as_posix()
+
+    def align_mesh(self):
+        """Create data of a 3D mesh to calculate Light Field Distance.
+
+        It runs an external command that create intermediate files and moves
+        these files to created temporary folder.
+
+        Returns:
+            None
+        """
+        process = subprocess.Popen(
+            ["./3DAlignment", self.temp_path.with_suffix("").as_posix()],
+            cwd=(CURRENT_DIR / "Executable").as_posix(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        output, err = process.communicate()
+        if len(err) > 0:
+            print(err)
+            sys.exit(1)
+
+        for file, out_file in zip(
+            GENERATED_FILES_NAMES, OUTPUT_NAME_TEMPLATES
+        ):
+            shutil.move(
+                os.path.join((CURRENT_DIR / "Executable").as_posix(), file),
+                (
+                    self.lfd_dir_path / out_file.format(self.file_name)
+                ).as_posix(),
+            )
+
+
+class LightFieldDistance2:
+    """Class that allows to calculate light field distance.
+
+    It supports representing objects in the Wavefront OBJ format.
+    """
+
+    def __init__(self, verbose: bool = 0):
+        """Instantiate the class.
+
+        Args:
+            verbose: Whether to display processing information performed step
+                by step.
+        """
+        self.verbose = verbose
+
+    def get_distance(
+        self,
+        lfd_dir1,
+        name1,
+        lfd_dir2,
+        name2
+    ) -> float:
+        """Calculate LFD between two meshes.
+
+        These objects are taken as meshes from the Wavefront OBJ format. Hence
+        vertices represent coordinates as a matrix Nx3, while `triangles`
+        connects these vertices. Each entry in the `triangles` is a 3 element
+        vector consisting of indices to appropriate vertices.
+
+        Args:
+            vertices_1: np.ndarray of vertices of the first object.
+            triangles_1: np.ndarray of indices to vertices corresponding
+                to particular indices connecting and forming a triangle.
+            vertices_2: np.ndarray of vertices of the second object.
+            triangles_2: np.ndarray of indices to vertices corresponding
+                to particular indices connecting and forming a triangle. This
+                parameter is for the second object.
+
+        Returns:
+            Light Field Distance between `object_1` and `object_2`.
+        """
+        if self.verbose:
+            print("Calculating distances ...")
+
+        temp_path1 = (Path(lfd_dir1) / "{}.obj".format(name1)).with_suffix("").as_posix()
+        temp_path2 = (Path(lfd_dir2) / "{}.obj".format(name2)).with_suffix("").as_posix()
+
+        process = subprocess.Popen(
+            ["./Distance", temp_path1, temp_path2],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=(CURRENT_DIR / "Executable").as_posix(),
+        )
+
+        output, err = process.communicate()
+        lfd = find_similarity_in_logs(output)
+
+        return lfd
+
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
